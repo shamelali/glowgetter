@@ -8,6 +8,8 @@ import { NavBar } from "@/components/nav-bar";
 import Home from "@/pages/home";
 import ArtistsPage from "@/pages/artists/index";
 import ArtistDetailPage from "@/pages/artists/detail";
+import StudiosPage from "@/pages/studios/index";
+import StudioDetailPage from "@/pages/studios/detail";
 import DashboardPage from "@/pages/dashboard/index";
 import NotFound from "@/pages/not-found";
 
@@ -20,6 +22,8 @@ function Router() {
           <Route path="/" component={Home} />
           <Route path="/artists" component={ArtistsPage} />
           <Route path="/artists/:slug" component={ArtistDetailPage} />
+          <Route path="/studios" component={StudiosPage} />
+          <Route path="/studios/:slug" component={StudioDetailPage} />
           <Route path="/dashboard" component={DashboardPage} />
           <Route component={NotFound} />
         </Switch>

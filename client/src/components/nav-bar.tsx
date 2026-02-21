@@ -21,7 +21,7 @@ export function NavBar() {
 
   const navLinks = [
     { href: "/artists", label: "Find Artists" },
-    // Add more public links here if needed
+    { href: "/studios", label: "Book Studios" },
   ];
 
   return (
