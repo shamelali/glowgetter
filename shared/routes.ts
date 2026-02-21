@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { insertArtistSchema, insertServiceSchema, insertPortfolioSchema, insertBookingSchema, artists, services, portfolios, bookings } from "./schema";
+import { insertArtistSchema, insertStudioSchema, insertServiceSchema, insertPortfolioSchema, insertBookingSchema, artists, services, portfolios, bookings, studios } from "./schema";
 
 export const errorSchemas = {
   validation: z.object({
@@ -57,10 +57,58 @@ export const api = {
       },
     },
   },
+  studios: {
+    list: {
+      method: "GET" as const,
+      path: "/api/studios" as const,
+      input: z.object({
+        search: z.string().optional(),
+        state: z.string().optional(),
+        city: z.string().optional(),
+      }).optional(),
+      responses: {
+        200: z.array(z.custom<typeof studios.$inferSelect>()),
+      },
+    },
+    get: {
+      method: "GET" as const,
+      path: "/api/studios/:slug" as const,
+      responses: {
+        200: z.custom<typeof studios.$inferSelect & { services: typeof services.$inferSelect[], portfolio: typeof portfolios.$inferSelect[] }>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/studios" as const,
+      input: insertStudioSchema.omit({ userId: true, id: true, createdAt: true, isVerified: true }),
+      responses: {
+        201: z.custom<typeof studios.$inferSelect>(),
+        400: errorSchemas.validation,
+      },
+    },
+    update: {
+      method: "PUT" as const,
+      path: "/api/studios/:id" as const,
+      input: insertStudioSchema.omit({ userId: true, id: true, createdAt: true, isVerified: true }).partial(),
+      responses: {
+        200: z.custom<typeof studios.$inferSelect>(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
+    },
+  },
   services: {
     list: {
       method: "GET" as const,
       path: "/api/artists/:artistId/services" as const,
+      responses: {
+        200: z.array(z.custom<typeof services.$inferSelect>()),
+      },
+    },
+    studioList: {
+      method: "GET" as const,
+      path: "/api/studios/:studioId/services" as const,
       responses: {
         200: z.array(z.custom<typeof services.$inferSelect>()),
       },
@@ -91,6 +139,13 @@ export const api = {
         200: z.array(z.custom<typeof portfolios.$inferSelect>()),
       },
     },
+    studioList: {
+      method: "GET" as const,
+      path: "/api/studios/:studioId/portfolio" as const,
+      responses: {
+        200: z.array(z.custom<typeof portfolios.$inferSelect>()),
+      },
+    },
     create: {
       method: "POST" as const,
       path: "/api/portfolios" as const,
@@ -112,9 +167,9 @@ export const api = {
   bookings: {
     list: {
       method: "GET" as const,
-      path: "/api/bookings" as const, // Returns bookings for the current user (client or artist)
+      path: "/api/bookings" as const,
       responses: {
-        200: z.array(z.custom<typeof bookings.$inferSelect & { artist?: typeof artists.$inferSelect, client?: any, service?: typeof services.$inferSelect }>()),
+        200: z.array(z.custom<typeof bookings.$inferSelect & { artist?: typeof artists.$inferSelect, studio?: typeof studios.$inferSelect, client?: any, service?: typeof services.$inferSelect }>()),
       },
     },
     create: {
