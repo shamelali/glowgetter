@@ -1,4 +1,4 @@
-import { artists, services, portfolios, bookings, type Artist, type InsertArtist, type UpdateArtistRequest, type Service, type InsertService, type Portfolio, type InsertPortfolio, type Booking, type InsertBooking, type UpdateBookingStatusRequest, type ArtistWithDetails } from "@shared/schema";
+import { artists, services, portfolios, bookings, studios, type Artist, type InsertArtist, type UpdateArtistRequest, type Service, type InsertService, type Portfolio, type InsertPortfolio, type Booking, type InsertBooking, type UpdateBookingStatusRequest, type ArtistWithDetails, type Studio, type InsertStudio, type UpdateStudioRequest, type StudioWithDetails } from "@shared/schema";
 import { db } from "./db";
 import { eq, like, and, or } from "drizzle-orm";
 
@@ -11,18 +11,26 @@ export interface IStorage {
   createArtist(artist: InsertArtist): Promise<Artist>;
   updateArtist(id: number, updates: UpdateArtistRequest): Promise<Artist>;
 
+  // Studio Operations
+  getStudios(filters?: { search?: string, state?: string, city?: string }): Promise<Studio[]>;
+  getStudio(id: number): Promise<Studio | undefined>;
+  getStudioBySlug(slug: string): Promise<StudioWithDetails | undefined>;
+  getStudioByUserId(userId: string): Promise<Studio | undefined>;
+  createStudio(studio: InsertStudio): Promise<Studio>;
+  updateStudio(id: number, updates: UpdateStudioRequest): Promise<Studio>;
+
   // Service Operations
-  getServices(artistId: number): Promise<Service[]>;
+  getServices(artistId?: number, studioId?: number): Promise<Service[]>;
   createService(service: InsertService): Promise<Service>;
   deleteService(id: number): Promise<void>;
 
   // Portfolio Operations
-  getPortfolio(artistId: number): Promise<Portfolio[]>;
+  getPortfolio(artistId?: number, studioId?: number): Promise<Portfolio[]>;
   createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
   deletePortfolio(id: number): Promise<void>;
 
   // Booking Operations
-  getBookings(userId: string, role: 'client' | 'artist'): Promise<(Booking & { artist?: Artist, client?: any, service?: Service })[]>;
+  getBookings(userId: string, role: 'client' | 'artist' | 'studio'): Promise<(Booking & { artist?: Artist, studio?: Studio, client?: any, service?: Service })[]>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: number, status: string): Promise<Booking>;
 }
@@ -44,10 +52,6 @@ export class DatabaseStorage implements IStorage {
     if (filters?.city) {
       conditions.push(eq(artists.city, filters.city));
     }
-    // Note: Filtering by array column (specialties) with 'like' is a simplification. 
-    // In a real app, unnest or array operators would be better, but 'like' works for simple string matching if formatted correctly or using contains if available.
-    // Drizzle with Postgres supports array operators.
-    // For now, let's skip specialty filter in query or implement properly if needed.
     
     if (conditions.length > 0) {
       return await query.where(and(...conditions));
@@ -86,8 +90,68 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getServices(artistId: number): Promise<Service[]> {
-    return await db.select().from(services).where(eq(services.artistId, artistId));
+  async getStudios(filters?: { search?: string, state?: string, city?: string }): Promise<Studio[]> {
+    let query = db.select().from(studios);
+    const conditions = [];
+
+    if (filters?.search) {
+      conditions.push(or(
+        like(studios.name, `%${filters.search}%`),
+        like(studios.description, `%${filters.search}%`)
+      ));
+    }
+    if (filters?.state) {
+      conditions.push(eq(studios.state, filters.state));
+    }
+    if (filters?.city) {
+      conditions.push(eq(studios.city, filters.city));
+    }
+    
+    if (conditions.length > 0) {
+      return await query.where(and(...conditions));
+    }
+    
+    return await query;
+  }
+
+  async getStudio(id: number): Promise<Studio | undefined> {
+    const [studio] = await db.select().from(studios).where(eq(studios.id, id));
+    return studio;
+  }
+
+  async getStudioBySlug(slug: string): Promise<StudioWithDetails | undefined> {
+    const [studio] = await db.select().from(studios).where(eq(studios.slug, slug));
+    if (!studio) return undefined;
+
+    const studioServices = await db.select().from(services).where(eq(services.studioId, studio.id));
+    const studioPortfolio = await db.select().from(portfolios).where(eq(portfolios.studioId, studio.id));
+
+    return { ...studio, services: studioServices, portfolio: studioPortfolio };
+  }
+
+  async getStudioByUserId(userId: string): Promise<Studio | undefined> {
+    const [studio] = await db.select().from(studios).where(eq(studios.userId, userId));
+    return studio;
+  }
+
+  async createStudio(insertStudio: InsertStudio): Promise<Studio> {
+    const [studio] = await db.insert(studios).values(insertStudio).returning();
+    return studio;
+  }
+
+  async updateStudio(id: number, updates: UpdateStudioRequest): Promise<Studio> {
+    const [updated] = await db.update(studios).set(updates).where(eq(studios.id, id)).returning();
+    return updated;
+  }
+
+  async getServices(artistId?: number, studioId?: number): Promise<Service[]> {
+    if (artistId) {
+      return await db.select().from(services).where(eq(services.artistId, artistId));
+    }
+    if (studioId) {
+      return await db.select().from(services).where(eq(services.studioId, studioId));
+    }
+    return [];
   }
 
   async createService(insertService: InsertService): Promise<Service> {
@@ -99,8 +163,14 @@ export class DatabaseStorage implements IStorage {
     await db.delete(services).where(eq(services.id, id));
   }
 
-  async getPortfolio(artistId: number): Promise<Portfolio[]> {
-    return await db.select().from(portfolios).where(eq(portfolios.artistId, artistId));
+  async getPortfolio(artistId?: number, studioId?: number): Promise<Portfolio[]> {
+    if (artistId) {
+      return await db.select().from(portfolios).where(eq(portfolios.artistId, artistId));
+    }
+    if (studioId) {
+      return await db.select().from(portfolios).where(eq(portfolios.studioId, studioId));
+    }
+    return [];
   }
 
   async createPortfolio(insertPortfolio: InsertPortfolio): Promise<Portfolio> {
@@ -112,35 +182,29 @@ export class DatabaseStorage implements IStorage {
     await db.delete(portfolios).where(eq(portfolios.id, id));
   }
 
-  async getBookings(userId: string, role: 'client' | 'artist'): Promise<(Booking & { artist?: Artist, client?: any, service?: Service })[]> {
-    // This needs joins.
-    // For MVP, we can fetch bookings then enrich, or use Drizzle's query builder with relations if setup in db.ts with schema.
-    // Let's use db.query which is cleaner for relations.
-    
+  async getBookings(userId: string, role: 'client' | 'artist' | 'studio'): Promise<(Booking & { artist?: Artist, studio?: Studio, client?: any, service?: Service })[]> {
     if (role === 'artist') {
-       // Get artist ID first
        const artist = await this.getArtistByUserId(userId);
        if (!artist) return [];
-       
-       const results = await db.query.bookings.findMany({
+       return await db.query.bookings.findMany({
          where: eq(bookings.artistId, artist.id),
-         with: {
-           client: true,
-           service: true
-         },
+         with: { client: true, service: true },
          orderBy: (bookings, { desc }) => [desc(bookings.bookingDate)]
        });
-       return results;
+    } else if (role === 'studio') {
+       const studio = await this.getStudioByUserId(userId);
+       if (!studio) return [];
+       return await db.query.bookings.findMany({
+         where: eq(bookings.studioId, studio.id),
+         with: { client: true, service: true },
+         orderBy: (bookings, { desc }) => [desc(bookings.bookingDate)]
+       });
     } else {
-       const results = await db.query.bookings.findMany({
+       return await db.query.bookings.findMany({
          where: eq(bookings.clientId, userId),
-         with: {
-           artist: true,
-           service: true
-         },
+         with: { artist: true, studio: true, service: true },
          orderBy: (bookings, { desc }) => [desc(bookings.bookingDate)]
        });
-       return results;
     }
   }
 
